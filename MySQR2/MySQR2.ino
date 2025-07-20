@@ -45,145 +45,211 @@ function_generator.ino>
 Для выделения синусоиды из ШИМ к пину 5 подключается RC-фильтр:
 C = 22 мкФ
 R = подстроечный / переменный резистор 1 кОм (установил 70 Ом)
+
+20июл25
+Подключил:
+ЖК-модуль IIC/I2C 1602 для arduino 1602 LCD UNO r3 mega2560 LCD 1602
 */
 //#define Sine_pin 5
 
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h> // Подключение библиотеки
+LiquidCrystal_I2C lcd(0x27,16,2); // Указываем I2C адрес (наиболее распространенное
+// значение), а также параметры экрана (в случае LCD 1602 - 2 строки по 16 символов
+// в каждой
+
 byte Lshift[] = {3,3,2,2};
-
-
 double angle = 0;
-const int signal_pin = 9;  
+//const int signal_pin = 9;  
 const int Sine_pin = 5;
-//const int POT_pin = A2;
-const int Strob_pin = 7; //Контакт для подключения стробирующего сигнала (здесь от pin = 9)
+//const int Strob_pin = 7; //Контакт для подключения стробирующего сигнала (здесь 
+//от pin = 9)
 double increment = 0.2;
+float freqency = 0;
+float freq_old = 0;		//Для регистрации изменения частоты
 
+volatile bool intFlag = false;   // флаг: https://alexgyver.ru/lessons/interrupts/?ysclid=mdbe515w8a409736619
+
+//=========================================================================
 void setup() 
 {
-  Serial.begin(9600);
-  
-  //=======================================================================
-//Моя стандартная вставка для индикации названия скетча при запуске
+  Serial.begin(115200);
+//=======================================================================
+//Вместо приветствия :)
+
+  lcd.init();                      // Инициализация дисплея
+  lcd.clear();
+  lcd.backlight();                 // Подключение подсветки
+  lcd.setCursor(0,0);              // Установка курсора в начало первой строки
+  lcd.print("Generator");       // Набор текста на первой строке
+  lcd.setCursor(0,1);              // Установка курсора в начало второй строки
+  lcd.print("1Hz - 8MHz");       // Набор текста на второй строке
+
 byte tries = 20;
 delay(5000);
 //Serial.println("Вставка для индикации названия скетча при запуске: <My_Scetch.ino>");
-  Serial.println("Точный генератор 1гц — 8 МГц на Arduino с управлением от ПК + Sin: <MySQR2.ino>");
+  Serial.println("Демонстрационный генератор на Arduino с управлением от ПК: <16_MySQR2-2.ino>");
   while (--tries)
 	{
 		delay(500);               // Пауза 500 мс
         Serial.print(".");        // Печать "."
 		Serial.print(tries);	  // Печать ожидания пуска программы
 	}
-  Serial.println();
-  
-  	
-	Serial.println("Введите значение частоты меандра числом в герцах");
-	Serial.println("Значение синуса будет меньше в 16 раз");
-    Serial.println(" =========================");
-	Serial.println();
+ 
+ Serial.println();
+ Serial.println("Введите значение частоты меандра числом в герцах");
+ Serial.println("Значение синуса будет меньше в 16 раз");
+ Serial.println(" =========================");
+ Serial.println();
 //=======================================================================
-  
   pinMode (9, OUTPUT); // выход генератора
-  
-  pinMode (5, OUTPUT); // 
-  
-  //pinMode (10, INPUT); // 
-
+  pinMode (5, OUTPUT); // выход ШИМ
   //Регистр управления А таймера/счетчика1
   TCCR1A=0;
   //Регистр управления B таймера/счетчика1
   TCCR1B=0;
-  
-  attachInterrupt(4,generateSignal,CHANGE); //от сигнала, поступающего на pin = 7)
-  //см. https://alexgyver.ru/lessons/interrupts/?ysclid=mcne1qxpy3966705587
-}
+  attachInterrupt(4,generateSignal,CHANGE); //Внешнее прерывание от сигнала, поступающего на pin = 7)
 
-//====== ПОДПРОГРАММЫ ==============================================
-void generateSignal()
-{
-   double sineValue = sin(angle);
-   sineValue *= 255;
-   int plot = map(sineValue, -255, +255, 0, 255);
-  // Serial.println(plot);   //Для контроля
-   analogWrite(Sine_pin,plot);	// Выход ШИМ
-  // Write(Sine_pin,plot);		// Выход "цифра" для ЦАП
-   angle += increment; 
-  // if (angle > 180)
-   if (angle > (2*PI))
-   angle =0;
-}
+ // lcd.clear();
 
-// ================================================ ПОДПРОГРАММЫ ===
+ }
 
 void loop() 
 {
-
   static uint32_t UartFreq = 0; //Переменная для задания нужной частоты
   uint32_t compare = OCR1A;  //OCR1A - Регистры сравнения A выхода таймера/счетчика1
   uint16_t divider = 1;  //переменная коэфф. деления прескалера
-
-  float freqency;
-
+ // float freqency;
+//  freqency;
+  //uint32_t freqency;
+  
+  if (intFlag) 
+  {
+    intFlag = false;    // сбрасываем
+    double sineValue = sin(angle);
+    sineValue *= 255;
+    int plot = map(sineValue, -255, +255, 0, 255);
+   // Serial.println(plot);   //Для контроля
+    analogWrite(Sine_pin,plot);	// Выход ШИМ
+    angle += increment; 
+    if (angle > (2*PI))
+       angle =0;
+  }
+  
   if (Serial.available() > 0) 
   { 
     UartFreq = Serial.parseInt(); //получаем значение частоты из сообщения UART
-
     if (UartFreq <= 0 || UartFreq > F_CPU/2) //Проверяем допустимый диапазон значений частоты
-	{ 
-      return; 
-	}
+      return;
 /*
 F_CPU — макроопределение в программировании микроконтроллеров AVR, которое задаёт 
 тактовую частоту микроконтроллера в герцах. Например, в файле Makefile может быть 
 задано значение: F_CPU = 16000000UL — частота задана 16 МГц.
 */
     compare = (F_CPU / UartFreq /2 /divider); //вычисляем нужное значение OCR
-
-
     for (byte i = 0; i < 4; i++) 
 	{
-
-      if (compare > 65536) { 
+      if (compare > 65536) 
+	  { 
         divider <<= Lshift[i];
-        compare = F_CPU / UartFreq /2 /divider; }
-        
-      else {
+        compare = F_CPU / UartFreq /2 /divider; 
+	  }
+      else 
+	  {
         TCCR1B = (i + 1) | ( 1 << WGM12 ); 
         break; }  // CTC режим работы таймера
-    } 
-
+      } 
     OCR1A = compare-1; 
     TCCR1A = 1 << COM1A0;
-
-// Вывод значения частоты обратно в UART в подтверждение 
-//Следующие три строки можно закомментировать, эта информация
-//не используется в программе управления на Delphi
     freqency = F_CPU / 2 / (OCR1A + 1) / divider;
-	
 	Serial.print("Частота меандра (строба) = ");
-    if (freqency <10000) 
+    if (freqency <1000) 
 	{
 		Serial.print(freqency, 0); 
 		Serial.println(" Hz ");
 	}
-    if (freqency >= 10000)
+    if (freqency >= 1000)
 		{
-			Serial.print(freqency / 1000, 3); 
+			Serial.print(freqency / 1000); 
 			Serial.println(" kHz");
 		}
 	Serial.println(" --------------------------------");
 	
 	Serial.print("Частота синуса = ");
-		 if (freqency <10000) 
+		 if (freqency <1000) 
 	{
 		Serial.print(freqency/16, 0); 
 		Serial.println(" Hz ");
 	}
-    if (freqency >= 10000)
+    if (freqency >= 1000)
 		{
-			Serial.print(freqency / 16000, 3); 
+			Serial.print(freqency/16000); 
 			Serial.println(" kHz");
 		}
-
+		
+	if (freqency != freq_old)
+		{
+			LCD();
+		}		
+	
  }
+ /*
+lcd.setCursor(0,0);       // Установка курсора в начало первой строки
+
+if(freqency < 1000)
+{
+  lcd.print("Freqency, Hz =");  // Набор текста на первой строке
+  lcd.setCursor(0,1);       // Установка курсора в начало второй строки
+  lcd.print((uint32_t) freqency);
 }
+
+else
+{
+  lcd.print("Freqency, kHz =");  // Набор текста на первой строке
+  lcd.setCursor(0,1);       // Установка курсора в начало второй строки
+  lcd.print( freqency / 1000);
+}
+*/
+}
+
+//====== ПОДПРОГРАММЫ ==============================================>>>
+void generateSignal()
+{
+   intFlag = true;   // подняли флаг прерывания
+   /*
+   double sineValue = sin(angle);
+   sineValue *= 255;
+   int plot = map(sineValue, -255, +255, 0, 255);
+  // Serial.println(plot);   //Для контроля
+   analogWrite(Sine_pin,plot);	// Выход ШИМ
+   angle += increment; 
+   if (angle > (2*PI))
+   angle =0;
+*/
+}
+
+void LCD()
+{
+//	noInterrupts();
+    
+	freq_old = freqency;
+	lcd.clear();
+	
+	lcd.setCursor(0,0);       // Установка курсора в начало первой строки
+
+  if(freqency < 1000)
+ {
+    lcd.print("Freqency, Hz =");  // Набор текста на первой строке
+    lcd.setCursor(0,1);       // Установка курсора в начало второй строки
+    lcd.print((uint32_t) freqency);
+  }
+
+  else
+  {
+    lcd.print("Freqency, kHz =");  // Набор текста на первой строке
+    lcd.setCursor(0,1);       // Установка курсора в начало второй строки
+    lcd.print( freqency / 1000);
+  }
+//  interrupts();
+}
+// <<<================================================ ПОДПРОГРАММЫ ===
