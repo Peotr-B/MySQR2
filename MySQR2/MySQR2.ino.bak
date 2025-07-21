@@ -1,9 +1,4 @@
 /*
-20июл25
-Подключил инкрементный энкодер WAVGAT:
-нажатие увеличивает кратность шага регулировки частоты: 1-10-100-1000-1
-(см. файл My2_Gen_MCP4725.ino)
-
 29июн25
 https://musbench.com/all/arduino-sqr-gen/
 Точный генератор 1гц — 8 МГц на Arduino с управлением от компьютера
@@ -63,9 +58,6 @@ LiquidCrystal_I2C lcd(0x27,16,2); // Указываем I2C адрес (наиб
 // значение), а также параметры экрана (в случае LCD 1602 - 2 строки по 16 символов
 // в каждой
 
-static uint32_t UartFreq = 0; //Переменная для задания нужной частоты
-uint32_t compare = OCR1A;  //OCR1A - Регистры сравнения A выхода таймера/счетчика1
-uint16_t divider = 1;  //переменная коэфф. деления прескалера
 byte Lshift[] = {3,3,2,2};
 double angle = 0;
 //const int signal_pin = 9;  
@@ -75,14 +67,6 @@ const int Sine_pin = 5;
 double increment = 0.2;
 float freqency = 0;
 float freq_old = 0;		//Для регистрации изменения частоты
-
-const int Encoder_OuputA  = 11;		//S1
-const int Encoder_OuputB  = 12;		//S2
-const int Encoder_Switch = 10;		//KEY
-int Previous_Output;
-int multiplier = 1;
-unsigned long lastButtonPress = 0;    // Создаем переменную lastBut для устранения дребезга
-unsigned long Pause = 0; 
 
 volatile bool intFlag = false;   // флаг: https://alexgyver.ru/lessons/interrupts/?ysclid=mdbe515w8a409736619
 
@@ -115,12 +99,9 @@ delay(5000);
  Serial.println();
  Serial.println("Введите значение частоты меандра числом в герцах");
  Serial.println("Значение синуса будет меньше в 16 раз");
- Serial.println("Или поворачивай ручку энкодера");
- Serial.println("Кратность шага поворота энкодера по кнопке: х1-х10-х100-х1000-х1");
  Serial.println(" =========================");
  Serial.println();
 //=======================================================================
-  Previous_Output = digitalRead(Encoder_OuputA);
   pinMode (9, OUTPUT); // выход генератора
   pinMode (5, OUTPUT); // выход ШИМ
   //Регистр управления А таймера/счетчика1
@@ -128,15 +109,20 @@ delay(5000);
   //Регистр управления B таймера/счетчика1
   TCCR1B=0;
   attachInterrupt(4,generateSignal,CHANGE); //Внешнее прерывание от сигнала, поступающего на pin = 7)
- //см. https://alexgyver.ru/lessons/interrupts/?ysclid=mcne1qxpy3966705587
+
+ // lcd.clear();
+
  }
 
 void loop() 
 {
-  static uint32_t UartF = 0; //Переменная для задания нужной частоты
- // uint32_t compare = OCR1A;  //OCR1A - Регистры сравнения A выхода таймера/счетчика1
- // uint16_t divider = 1;  //переменная коэфф. деления прескалера
-  // float freqency;
+  static uint32_t UartFreq = 0; //Переменная для задания нужной частоты
+  uint32_t compare = OCR1A;  //OCR1A - Регистры сравнения A выхода таймера/счетчика1
+  uint16_t divider = 1;  //переменная коэфф. деления прескалера
+ // float freqency;
+//  freqency;
+  //uint32_t freqency;
+  
   if (intFlag) 
   {
     intFlag = false;    // сбрасываем
@@ -150,104 +136,11 @@ void loop()
        angle =0;
   }
   
-  if (Serial.available() > 0)
+  if (Serial.available() > 0) 
   { 
-    UartF = Serial.parseInt(); //получаем значение частоты из сообщения UART
-	
-     if (UartF <= 0 || UartF > F_CPU/2) //Проверяем допустимый диапазон значений частоты
+    UartFreq = Serial.parseInt(); //получаем значение частоты из сообщения UART
+    if (UartFreq <= 0 || UartFreq > F_CPU/2) //Проверяем допустимый диапазон значений частоты
       return;
-	 UartFreq = UartF;
-	 F_Gen();
-	 }
- 
- if (freqency != freq_old)
-	 LCD();
- 
-  /* Энкодер */
- 
-  if (digitalRead(Encoder_OuputA) != Previous_Output)
-   {
-     if (digitalRead(Encoder_OuputB) != Previous_Output) 
-     { 
-      // freqency = freqency + multiplier;
-	   UartFreq = UartFreq + multiplier;
-       Serial.print("UartFreq = ");
-	   Serial.println(UartFreq);	  
-     } 
-     else 
-     {
-     //  freqency = freqency - multiplier;
-	   UartFreq = UartFreq - multiplier;
-       Serial.print("UartFreq = ");
-	   Serial.println(UartFreq);	
-     }
-	 
-	 F_Gen();
-   }
-  
-      if (digitalRead(Encoder_Switch) == 0)	//ВНИМАНИЕ! Ввести задержку
-	  // как в https://robotchip.ru/podklyuchenie-enkodera-ky-040-k-arduino/
-   {
-	     if (millis() - lastButtonPress > 50) // Если состояние LOW в течении 50 мкс, кнопка нажата 
-	{ 
-      multiplier = multiplier * 10;
-	  if (multiplier > 1000)
-		  multiplier = 1;
-	  Serial.print("multiplier = ");
-	  Serial.println(multiplier);	
-    }
-    lastButtonPress = millis();
-  //  delay(1);                               // Пауза   
-  
-  // Pause
-  if (millis() - Pause > 500)
-  {
-	  if(digitalRead(Encoder_Switch) != 0)
-	  {
-		  Previous_Output = digitalRead(Encoder_OuputA);
-		  Pause = millis();
-	  }	  
-  }
-   }
-   Previous_Output = digitalRead(Encoder_OuputA);  
-}
-
-//====== ПОДПРОГРАММЫ ==============================================>>>
-void generateSignal()
-{
-   intFlag = true;   // подняли флаг прерывания
-}
-
-void LCD()
-{
-	freq_old = freqency;
-	lcd.clear();
-	
-	lcd.setCursor(0,0);       // Установка курсора в начало первой строки
-
-  if(freqency < 1000)
- {
-    lcd.print("Freqency, Hz =");  // Набор текста на первой строке
-    lcd.setCursor(0,1);       // Установка курсора в начало второй строки
-    lcd.print((uint32_t) freqency);
-  }
-
-  else
-  {
-    lcd.print("Freqency, kHz =");  // Набор текста на первой строке
-    lcd.setCursor(0,1);       // Установка курсора в начало второй строки
-    lcd.print( freqency / 1000);
-  }
-}
-
-void F_Gen()
-{
-  //  if (UartFreq <= 0 || UartFreq > F_CPU/2) //Проверяем допустимый диапазон значений частоты
-  //    return;
-  
-  Serial.print("UartFreq= ");
-  Serial.println(UartFreq);
-  
 /*
 F_CPU — макроопределение в программировании микроконтроллеров AVR, которое задаёт 
 тактовую частоту микроконтроллера в герцах. Например, в файле Makefile может быть 
@@ -268,10 +161,9 @@ F_CPU — макроопределение в программировании �
       } 
     OCR1A = compare-1; 
     TCCR1A = 1 << COM1A0;
-	
     freqency = F_CPU / 2 / (OCR1A + 1) / divider;
 	Serial.print("Частота меандра (строба) = ");
-    if (freqency < 1000) 
+    if (freqency <1000) 
 	{
 		Serial.print(freqency, 0); 
 		Serial.println(" Hz ");
@@ -284,7 +176,7 @@ F_CPU — макроопределение в программировании �
 	Serial.println(" --------------------------------");
 	
 	Serial.print("Частота синуса = ");
-		 if (freqency < 1000) 
+		 if (freqency <1000) 
 	{
 		Serial.print(freqency/16, 0); 
 		Serial.println(" Hz ");
@@ -294,5 +186,50 @@ F_CPU — макроопределение в программировании �
 			Serial.print(freqency/16000); 
 			Serial.println(" kHz");
 		}
+ }
+ 
+ if (freqency != freq_old)
+	 LCD();
+}
+
+//====== ПОДПРОГРАММЫ ==============================================>>>
+void generateSignal()
+{
+   intFlag = true;   // подняли флаг прерывания
+   /*
+   double sineValue = sin(angle);
+   sineValue *= 255;
+   int plot = map(sineValue, -255, +255, 0, 255);
+  // Serial.println(plot);   //Для контроля
+   analogWrite(Sine_pin,plot);	// Выход ШИМ
+   angle += increment; 
+   if (angle > (2*PI))
+   angle =0;
+*/
+}
+
+void LCD()
+{
+//	noInterrupts();
+    
+	freq_old = freqency;
+	lcd.clear();
+	
+	lcd.setCursor(0,0);       // Установка курсора в начало первой строки
+
+  if(freqency < 1000)
+ {
+    lcd.print("Freqency, Hz =");  // Набор текста на первой строке
+    lcd.setCursor(0,1);       // Установка курсора в начало второй строки
+    lcd.print((uint32_t) freqency);
+  }
+
+  else
+  {
+    lcd.print("Freqency, kHz =");  // Набор текста на первой строке
+    lcd.setCursor(0,1);       // Установка курсора в начало второй строки
+    lcd.print( freqency / 1000);
+  }
+//  interrupts();
 }
 // <<<================================================ ПОДПРОГРАММЫ ===
